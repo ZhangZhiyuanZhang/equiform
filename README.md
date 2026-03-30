@@ -176,13 +176,6 @@ If you find this work helpful, please cite:
 
 ```bibtex
 @article{zhang2025canonical,
-    title={Canonical Policy: Learning Canonical 3D Representation for Equivariant Policy},
-    author={Zhang, Zhiyuan and Xu, Zhengtong and Lakamsani, Jai Nanda and She, Yu},
-    journal={arXiv preprint arXiv:2505.18474},
-    year={2025}
-}
-
-@article{zhang2025canonical,
   title={Canonical Policy: Learning Canonical 3D Representation for SE (3)-Equivariant Policy},
   author={Zhang, Zhiyuan and Xu, Zhengtong and Lakamsani, Jai Nanda and She, Yu},
   journal={arXiv preprint arXiv:2505.18474},
