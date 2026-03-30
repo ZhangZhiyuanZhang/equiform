@@ -32,7 +32,6 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
             n_groups=8,
             encoder_output_dim=256,
             use_pc_color=False,
-            pointnet_type="cp_so2",
             cond_predict_scale=True,
             # parameters passed to step
             **kwargs):
@@ -51,11 +50,13 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
         obs_shape_meta = shape_meta['obs']
         obs_dict = dict_apply(obs_shape_meta, lambda x: x['shape'])
 
+        self.use_contra = canonical_encoder_cfg.use_contra
+        
         obs_encoder = CanonicalEncoder(observation_space=obs_dict,
-                                        canonical_encoder_cfg=canonical_encoder_cfg,
                                         out_channel=encoder_output_dim,
+                                        canonical_encoder_cfg=canonical_encoder_cfg,
                                         use_pc_color=use_pc_color,
-                                        pointnet_type=pointnet_type,)
+                                        n_obs_steps=n_obs_steps,)
 
         # create diffusion model
         obs_feature_dim = obs_encoder.output_shape()

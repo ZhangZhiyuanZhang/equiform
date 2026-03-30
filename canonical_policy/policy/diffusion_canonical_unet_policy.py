@@ -31,7 +31,6 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
             n_groups=8,
             encoder_output_dim=256,
             use_pc_color=False,
-            pointnet_type="cp_so2",
             canonical_encoder_cfg=None,
             cond_predict_scale=True,
             # parameters passed to step
@@ -51,11 +50,13 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         obs_shape_meta = shape_meta['obs']
         obs_dict = dict_apply(obs_shape_meta, lambda x: x['shape'])
 
+        self.use_contra = canonical_encoder_cfg.use_contra
+
         obs_encoder = CanonicalEncoder(observation_space=obs_dict,
                                         out_channel=encoder_output_dim,
                                         canonical_encoder_cfg=canonical_encoder_cfg,
                                         use_pc_color=use_pc_color,
-                                        pointnet_type=pointnet_type,)
+                                        n_obs_steps=n_obs_steps,)
 
         # create diffusion model
         obs_feature_dim = obs_encoder.output_shape()
@@ -305,7 +306,15 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
 
-        loss_dict = {
+        if self.use_contra:
+            loss_ret = loss + 0.05 * ret['contrastive_equiv']
+            loss_dict = {
+                'bc_loss': loss.item(),
+                'contrastive_equiv': ret['contrastive_equiv'].item(),
+            }
+        else:
+            loss_ret = loss
+            loss_dict = {
                 'bc_loss': loss.item(),
             }
         

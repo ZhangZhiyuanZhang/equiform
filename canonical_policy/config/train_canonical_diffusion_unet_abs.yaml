@@ -26,9 +26,9 @@ policy:
   
   diffusion_step_embed_dim: 128
   down_dims:
-  - 128
   - 256
-  - 384
+  - 512
+  - 1024
   crop_shape:
   - 80
   - 80
@@ -55,13 +55,14 @@ policy:
   shape_meta: ${shape_meta}
 
   use_pc_color: False
-  pointnet_type: "cp_so2"
 
   canonical_encoder_cfg:
     num_points: 256
     neighbor_num: 10
     rot_hidden_dim: 48
     rot_layers: 4
+    use_contra: True
+    use_geo: True
 
 
 ema:

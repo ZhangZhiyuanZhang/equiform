@@ -1,41 +1,27 @@
-# Canonical Policy: Learning Canonical 3D Representation for SE(3)-Equivariant Policy
+# EquiForm: Noise-Robust SE(3)-Equivariant Policy Learning from 3D Point Clouds
 
-[Project Website](https://zhangzhiyuanzhang.github.io/cp-website/) |
-[Paper](https://arxiv.org/abs/2505.18474) |
-[Video](https://drive.google.com/file/d/1fKU6Cs5frtCxBv3SxwQF2hUcB0vKy1US/view)  
-<a href="https://zhangzhiyuanzhang.github.io/personal_website/">Zhiyuan Zhang*</a><sup>1</sup>, 
-<a href="https://zhengtongxu.github.io/website/">Zhengtong Xu*</a><sup>1</sup>, 
-<a href="">Jai Nanda Lakamsani</a><sup>1</sup>, 
-<a href="https://www.purduemars.com/">Yu She</a><sup>1</sup>  
+[Project Website](https://zhangzhiyuanzhang.github.io/equiform-website/) |
+[Paper](https://arxiv.org/abs/2601.17486) |
+[Video](https://drive.google.com/file/d/1HyVqdvYWxostkExHzONM0jUvOTTgclIp/view?usp=sharing)  
+<a href="https://zhangzhiyuanzhang.github.io/personal_website/">Zhiyuan Zhang</a>, 
+<a href="https://www.purduemars.com/">Yu She</a>  
 
-<sup>1</sup> Purdue University, <sup>*</sup> Equal Contribution
+Edwardson School of Industrial Engineering, Purdue University
 
-## 📰 News
-- **Jan 2026** 🎉 *Canonical Policy* is **conditionally accepted** by **IEEE Transactions on Robotics (T-RO)**.
+<p align="center">
+  <img src="img/Teaser.gif" width="80%">
+</p>
 
-![](img/Teaser.gif)
 ## Installation
-1.  Install the following apt packages for mujoco:
-    ```bash
-    sudo apt install -y libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
-    ```
-
-1. Install [Mambaforge](https://github.com/conda-forge/miniforge#mambaforge) (strongly recommended) or Anaconda
 1. Clone this repo
     ```bash
-    git clone https://github.com/ZhangZhiyuanZhang/canonical_policy
-    cd canonical_policy
+    git clone https://github.com/ZhangZhiyuanZhang/equiform
+    cd equiform
     ```
 1. Install environment:
-    Use Mambaforge (strongly recommended):
-    ```bash
-    mamba env create -f conda_environment.yaml
-    conda activate cp
-    ```
-    or use Anaconda (not recommended): 
     ```bash
     conda env create -f conda_environment.yaml
-    conda activate cp
+    conda activate equiform
     ```
 1. Install mimicgen:
     ```bash
@@ -53,76 +39,96 @@
     pip list | grep mujoco
     ```
 
-![](img/Pipeline.svg)
+## EquiForm: Motivation and Details
 
+![Pipeline](img/pipeline.svg)
 
-## Quick Guide: Canonical Representation of Equivariant Groups
-### Import Required Modules
-```bash
-import torch
-from canonical_policy.model.vision.canonical_utils.utils import construct_rotation_matrix
-from canonical_policy.model.vision.canonical_utils.vec_pointnet import VecPointNet, VN_Regressor
+EquiForm is built upon the idea of **data canonicalization**.  
+Given two point clouds X and Y, if there exists a transformation T \in SE(3) such that Y = TX, then they share the same canonical representation:
+X̂ = Ŷ.
+More details can be found in Section III-B of our paper: *"SE(3) Canonicalization Policy Learning"*.
 
-# encapulate the rotation matrix estimation
-def get_canonical_rot(input_pcl, extractor, predictor):
-    """
-    input_pcl: [B, N, 3]
-    """
-    equiv_feat = extractor(input_pcl)   # [B, D, 3, N] mean pooling -> [B, D, 3]
-    v1, v2 = predictor(equiv_feat)  # [B, 3], [B, 3]
-    rot = construct_rotation_matrix(v1, v2)  # [B, 3, 3]
-    return rot
+---
 
-# generate random SO3 rotation matrix
-def random_rotation_matrix():
-    q = torch.randn(4)
-    q = q / q.norm()
-    qw, qx, qy, qz = q
-    return torch.tensor([
-        [1 - 2*qy**2 - 2*qz**2, 2*qx*qy - 2*qz*qw,     2*qx*qz + 2*qy*qw],
-        [2*qx*qy + 2*qz*qw,     1 - 2*qx**2 - 2*qz**2, 2*qy*qz - 2*qx*qw],
-        [2*qx*qz - 2*qy*qw,     2*qy*qz + 2*qx*qw,     1 - 2*qx**2 - 2*qy**2]
-    ])
+### 🧠 Motivation
 
-# SO3-equivariant model
-extractor = VecPointNet(h_dim=32, c_dim=32, num_layers=2, ksize=5)
-predictor = VN_Regressor(pc_feat_dim=32)
-```
-### Generate Equivariant Group
-```bash
-# Generate random point cloud X ∈ ℝ^{N×3}
-B = 1
-N = 12
-X = torch.rand(B, N, 3)
+As illustrated below:
+<p align="center">
+    <img src="img/data_cn.svg" width="100%">
+</p>
+- During training, expert demonstrations are collected under a specific pose distribution (Fig. (a)).
+- At inference time, the scene may be arbitrarily transformed.
+- By applying data canonicalization (Fig. (b)), observations related by SE(3) transformations are mapped into a shared canonical space, eliminating pose variations.
 
-# X and Y are within the same equivariant group
-R = random_rotation_matrix()
-t = torch.randn(B, 1, 3)
-Y = X @ R.T + t  # equal to (R @ X.T).T
-```
-### Transform elements of an equivariant group into a shared canonical representation
-```bash
-# 1. Point Cloud Decenterization
-X_decentered = X - X.mean(dim=1, keepdim=True)   # [B, N, 3]
-Y_decentered = Y - Y.mean(dim=1, keepdim=True)   # [B, N, 3]
+---
 
-# 2. Compute inverse rotation matrix for each element
-rot_X = get_canonical_rot(X_decentered, extractor, predictor)  # [B, 3, 3]
-rot_Y = get_canonical_rot(Y_decentered, extractor, predictor)  # [B, 3, 3]
+### ⚠️ Challenges in Practice
 
-# 3. Transform to canonical space
-X_canonical = X_decentered @ rot_X  # equal to (R^(-1) @ X.T).T
-Y_canonical = Y_decentered @ rot_Y  # equal to (R^(-1) @ X.T).T
+However, real-world point clouds are noisy due to:
+- depth noise  
+- occlusions  
+- sensor imperfections  
 
-# Print results
-print("X_canonical:", X_canonical)
-print("Y_canonical:", Y_canonical)
-```
+This introduces two key issues:
+
+1. **Feature inconsistency**  
+   Similar observations with different noise patterns may lead to different features and thus different actions.
+
+2. **Violation of exact SE(3) alignment**  
+   Canonicalization assumes a perfect transformation \( T \) aligning \( X \) and \( Y \).  
+   Even small perturbations (e.g., a single noisy point) can break this assumption:
+<p align="center">
+    <img src="img/clean_noise.svg" width="50%">
+</p>
+
+---
+
+### 🚀 Our Solution
+
+To address these challenges, we propose two key modules (implementation can be found in: `canonical_policy/model/vision/canonical_extractor.py`):
+
+#### 1. Geometric Denoising
+
+We refine point clouds via:
+- **Normal update**: projecting points back to the underlying surface  
+- **Tangential update**: improving uniformity of point distribution
+
+Comparison with FPS (Farthest Point Sampling) under increasing Gaussian noise:
+
+<p align="center">
+    <img src="img/noise_vis.svg" width="80%">
+<\p>
+
+---
+
+#### 2. SE(3)-Equivariant Contrastive Learning
+
+To improve feature robustness under noise:
+- We generate noisy counterparts of the same point cloud
+- Apply **contrastive loss** to enforce consistency
+
+This encourages the model to learn **noise-invariant equivariant features**.
+
+After applying this module, features become significantly more stable:
+
+<p align="center">
+    <img src="img/vis_feat.svg" width="80%">
+<\p>
+
+---
+
+### 💡 Summary
+
+EquiForm improves canonicalization-based policies by:
+- enhancing geometric robustness (denoising)
+- enforcing feature consistency (equivariant contrastive learning)
+
+This leads to more reliable performance under real-world noise and pose variations.
 
 ## Dataset
 ### Download Dataset
 Download dataset from MimicGen's hugging face: https://huggingface.co/datasets/amandlek/mimicgen_datasets/tree/main/core  
-Make sure the dataset is kept under `/path/to/canonical_policy/data/robomimic/datasets/[dataset]/[dataset].hdf5`
+Make sure the dataset is kept under `/path/to/equiform/data/robomimic/datasets/[dataset]/[dataset].hdf5`
 
 ### Generating Voxel and Point Cloud Observation
 
@@ -145,23 +151,42 @@ python canonical_policy/scripts/robomimic_dataset_conversion.py -i data/robomimi
 ```
 
 ## Training with point cloud observation
-To train Canonical Policy (with absolute pose control) in Stack D1 task:
+To train EquiForm (with absolute pose control) in Stack D1 task:
 ```bash
 # Make sure you have the voxel converted dataset with absolute action space from the previous step
-# Train the Canonical Policy with SO(2) Equivariance
-python train.py --config-name=train_canonical_diffusion_unet_abs task_name=stack_d1 n_demo=200 policy.pointnet_type=cp_so2
-# Train the Canonical Policy with SO(3) Equivariance
-python train.py --config-name=train_canonical_diffusion_unet_abs task_name=stack_d1 n_demo=200 policy.pointnet_type=cp_so3
+python train.py --config-name=train_canonical_diffusion_unet_abs \
+                task_name=stack_d1 \
+                n_demo=200 \
+                training.seed=42 \
+                policy.canonical_encoder_cfg.use_geo=True \
+                policy.canonical_encoder_cfg.use_contra=True \
+                
 ```
 
 ## Citation
-Please cite this paper if you find helpful,
-```bash
+If you find this work helpful, please cite:
+```bibtex
+@article{zhang2026equiform,
+  title={EquiForm: Noise-Robust SE (3)-Equivariant Policy Learning from 3D Point Clouds},
+  author={Zhang, Zhiyuan and She, Yu},
+  journal={arXiv preprint arXiv:2601.17486},
+  year={2026}
+}
+```
+
+```bibtex
 @article{zhang2025canonical,
     title={Canonical Policy: Learning Canonical 3D Representation for Equivariant Policy},
     author={Zhang, Zhiyuan and Xu, Zhengtong and Lakamsani, Jai Nanda and She, Yu},
     journal={arXiv preprint arXiv:2505.18474},
     year={2025}
+}
+
+@article{zhang2025canonical,
+  title={Canonical Policy: Learning Canonical 3D Representation for SE (3)-Equivariant Policy},
+  author={Zhang, Zhiyuan and Xu, Zhengtong and Lakamsani, Jai Nanda and She, Yu},
+  journal={arXiv preprint arXiv:2505.18474},
+  year={2025}
 }
 ```
 
@@ -169,9 +194,5 @@ Please cite this paper if you find helpful,
 This repository is released under the MIT license. See [LICENSE](LICENSE) for additional details.
 
 ## Acknowledgement
-* Our repo is built upon the origional [Equivariant Diffusion Policy](https://github.com/pointW/canonical_policy)
-* The Point Cloud Encoder is adapted from the original [PointMLP](https://github.com/ma-xu/pointMLP-pytorch)
-* We used [Vector Neurons](https://github.com/FlyingGiraffe/vnn) as our SO(3)-equivariant network: .
-In practice, we only need to leverage the SO(3)-equivariance property to obtain the rotation matrix.
-In theory, any SO(3)-equivariant network could be used, but VN performs equivariant operations directly on vectors, making it well-suited for rotation vector estimation.
+* Our repo is built upon the origional [Canonical Policy](https://github.com/ZhangZhiyuanZhang/canonical_policy)
 

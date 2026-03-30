@@ -1,4 +1,4 @@
-name: cp
+name: equiform
 channels:
   - pytorch
   - pytorch3d
