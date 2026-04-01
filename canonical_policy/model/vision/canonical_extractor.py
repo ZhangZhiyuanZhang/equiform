@@ -25,77 +25,85 @@ import numpy as np
 
 class SequentialGeometricUpdate(nn.Module):
     """
-    几何一致化模块（仅输入 xyz）:
-      1) 一次 KNN -> 用于法向估计 + 法向修正
-      2) 法向修正: 将点沿法向压回表面
-      3) FPS下采样
-      4) 切向平滑: 在更新后的点云上沿切平面靠近局部 group mean
+    Geometric consistency module operating on xyz only.
+
+    Pipeline:
+      1) Run KNN once for normal estimation and normal-based correction
+      2) Project points back toward the local surface along the normal direction
+      3) Apply FPS downsampling
+      4) Perform tangential smoothing on the updated point cloud by moving points
+         toward the local group mean within the tangent plane
     """
-    def __init__(self, k=16, num_fps=256):
+    def __init__(self, k: int = 16, num_fps: int = 256):
         super().__init__()
         self.k = k
         self.num_fps = num_fps
 
     @staticmethod
-    def estimate_normals_from_knn(xyz, neighbors):
+    def estimate_normals_from_knn(xyz: torch.Tensor, neighbors: torch.Tensor) -> torch.Tensor:
         """
-        基于已知邻域点集估计法向:
-          xyz: [B, N, 3]
-          neighbors: [B, N, K, 3]
-          返回 normal: [B, N, 3]
+        Estimate normals from precomputed local neighborhoods.
+
+        Args:
+            xyz: Tensor of shape [B, N, 3]
+            neighbors: Tensor of shape [B, N, K, 3]
+
+        Returns:
+            normals: Tensor of shape [B, N, 3]
         """
         k = neighbors.shape[2]
-        X = neighbors - neighbors.mean(dim=2, keepdim=True)  # 去中心化
-        C = torch.matmul(X.transpose(-1, -2), X) / (k - 1)   # 协方差矩阵
+        X = neighbors - neighbors.mean(dim=2, keepdim=True)
+        C = torch.matmul(X.transpose(-1, -2), X) / (k - 1)
         eigvals, eigvecs = torch.linalg.eigh(C)
-        normals = F.normalize(eigvecs[..., 0], dim=-1)       # 最小特征值方向
+        normals = F.normalize(eigvecs[..., 0], dim=-1)
         return normals
 
-    def forward(self, xyz):
+    def forward(self, xyz: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            xyz: [B, N, 3] 原始点云
+            xyz: Input point cloud of shape [B, N, 3]
+
         Returns:
-            xyz_updated: [B, num_fps, 3] 更新后点云
+            xyz_updated: Updated point cloud of shape [B, num_fps, 3]
         """
         B, N, _ = xyz.shape
         device = xyz.device
         batch_idx = torch.arange(B, device=device)[:, None, None]
 
-        # ---------- Step 0: 一次性计算 KNN ----------
+        # Step 0: KNN on the original point cloud
         knn1 = knn_points(xyz, xyz, K=self.k, return_nn=True)
-        neighbors = knn1.knn      # [B, N, K, 3]
-        idx = knn1.idx            # [B, N, K]
+        neighbors = knn1.knn          # [B, N, K, 3]
+        idx = knn1.idx                # [B, N, K]
 
-        # ---------- Step 1: 法向估计 ----------
+        # Step 1: Normal estimation
         normal = self.estimate_normals_from_knn(xyz, neighbors)
 
-        # ---------- Step 2: 法向修正 ----------
-        x_mean = neighbors.mean(dim=2)  # 邻域均值
-        neighbor_normals = normal[batch_idx, idx, :]  # 邻域法向
-        n_mean = F.normalize(neighbor_normals.mean(dim=2), dim=-1)  # 平均法向
+        # Step 2: Normal-direction correction
+        x_mean = neighbors.mean(dim=2)                               # [B, N, 3]
+        neighbor_normals = normal[batch_idx, idx, :]                 # [B, N, K, 3]
+        n_mean = F.normalize(neighbor_normals.mean(dim=2), dim=-1)   # [B, N, 3]
 
         delta = xyz - x_mean
-        n = n_mean.unsqueeze(-1)
-        Pn = n @ n.transpose(-1, -2)
-        delta_corr_n = Pn @ delta.unsqueeze(-1)
+        n = n_mean.unsqueeze(-1)                                     # [B, N, 3, 1]
+        Pn = n @ n.transpose(-1, -2)                                 # [B, N, 3, 3]
+        delta_corr_n = Pn @ delta.unsqueeze(-1)                      # [B, N, 3, 1]
         xyz_normal_updated = xyz - delta_corr_n.squeeze(-1)
 
-        # ---------- Step 3: FPS 下采样 ----------
+        # Step 3: FPS downsampling
         xyz_fps, fps_idx = sample_farthest_points(xyz_normal_updated, K=self.num_fps)
 
-        # ---------- Step 4: 切向修正 ----------
+        # Step 4: Tangential correction
         knn2 = knn_points(xyz_fps, xyz_normal_updated, K=self.k, return_nn=True)
         neighbors2 = knn2.knn
         idx2 = knn2.idx
         x_mean2 = neighbors2.mean(dim=2)
 
-        neighbor_normals2 = n_mean[batch_idx, idx2, :]
-        n_mean2 = F.normalize(neighbor_normals2.mean(dim=2), dim=-1)
+        neighbor_normals2 = n_mean[batch_idx, idx2, :]               # [B, M, K, 3]
+        n_mean2 = F.normalize(neighbor_normals2.mean(dim=2), dim=-1) # [B, M, 3]
 
         delta2 = xyz_fps - x_mean2
-        n2 = n_mean2.unsqueeze(-1)
-        Pn2 = n2 @ n2.transpose(-1, -2)
+        n2 = n_mean2.unsqueeze(-1)                                   # [B, M, 3, 1]
+        Pn2 = n2 @ n2.transpose(-1, -2)                              # [B, M, 3, 3]
         Pt2 = torch.eye(3, device=device).view(1, 1, 3, 3) - Pn2
         delta_corr_t = Pt2 @ delta2.unsqueeze(-1)
         xyz_updated = xyz_fps - delta_corr_t.squeeze(-1)
