@@ -97,7 +97,7 @@ Comparison with FPS (Farthest Point Sampling) under increasing Gaussian noise:
 
 <p align="center">
     <img src="img/noise_vis.svg" width="80%">
-<\p>
+</p>
 
 ---
 
@@ -113,7 +113,7 @@ After applying this module, features become significantly more stable:
 
 <p align="center">
     <img src="img/vis_feat.svg" width="80%">
-<\p>
+</p>
 
 ---
 
