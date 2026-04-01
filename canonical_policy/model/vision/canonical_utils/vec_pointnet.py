@@ -93,7 +93,7 @@ class VecPointNet(nn.Module):
         feat_list = []
         for i in range(self.num_layers):
             y, _ = self.layers[i](y)
-            y_global = y.mean(-1, keepdim=True)
+            y_global = y.mean(-1, keepdim=True)  # [B, C, 3, 1]
             y = torch.cat([y, y_global.expand_as(y)], dim=1)
             y, _ = self.global_layers[i](y)
             feat_list.append(y)
@@ -112,11 +112,11 @@ class VN_Regressor(nn.Module):
         vnla_cfg = {"mode": "so3", "act_func": act_func}
 
         self.fc_layers = nn.Sequential(
-            VecLNA(pc_feat_dim, 512, **vnla_cfg),
-            VecLNA(512, 256, **vnla_cfg)  # [B, 256, 3]
+            VecLNA(pc_feat_dim, 480, **vnla_cfg),
+            VecLNA(480, 240, **vnla_cfg)  # [B, 256, 3]
         )
         # Rotation prediction head
-        self.rot_head = VecLinear(256, 2)
+        self.rot_head = VecLinear(240, 2)
 
     def forward(self, x):
         x, _ = self.fc_layers(x)  # [B, 256, 3]

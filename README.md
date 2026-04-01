@@ -159,7 +159,7 @@ python train.py --config-name=train_canonical_diffusion_unet_abs \
                 n_demo=200 \
                 training.seed=42 \
                 policy.canonical_encoder_cfg.use_geo=True \
-                policy.canonical_encoder_cfg.use_contra=True \
+                policy.canonical_encoder_cfg.use_contra=True
                 
 ```
 

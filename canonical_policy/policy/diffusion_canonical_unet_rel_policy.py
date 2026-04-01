@@ -68,8 +68,7 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
         
 
         self.use_pc_color = use_pc_color
-        self.pointnet_type = pointnet_type
-        cprint(f"[DiffusionUnetCanonicalPolicy] pointnet_type: {self.pointnet_type}", "yellow")
+        cprint(f"[DiffusionUnetCanonicalPolicy] use_pc_color: {self.use_pc_color}", "yellow")
 
         model = CanonicalConditionalUnet1DRel(
             input_dim=input_dim,
@@ -205,6 +204,7 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
         # unnormalize prediction
         naction_pred = nsample[..., :Da]
         action_pred = self.normalizer['action'].unnormalize(naction_pred)
+        action_pred[..., 3:9] = naction_pred[..., 3:9]  # do not unnormalize rot_sixd
 
         # get action
         start = To - 1
@@ -230,6 +230,7 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
         nobs = self.normalizer.normalize(batch['obs'])
         nobs['robot0_eef_quat'] = batch['obs']['robot0_eef_quat']
         nactions = self.normalizer['action'].normalize(batch['action'])
+        nactions[..., 3:9] = batch['action'][..., 3:9]  # do not normalize rot_sixd
 
         batch_size = nactions.shape[0]
         horizon = nactions.shape[1]
@@ -304,8 +305,16 @@ class DiffusionCanonicalUNetRelPolicy(BaseImagePolicy):
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
         loss = loss.mean()
 
-        loss_dict = {
+        if self.use_contra:
+            loss_ret = loss + 0.1 * ret['contrastive_equiv']
+            loss_dict = {
+                'bc_loss': loss.item(),
+                'contrastive_equiv': ret['contrastive_equiv'].item(),
+            }
+        else:
+            loss_ret = loss
+            loss_dict = {
                 'bc_loss': loss.item(),
             }
-        
-        return loss, loss_dict
+
+        return loss_ret, loss_dict

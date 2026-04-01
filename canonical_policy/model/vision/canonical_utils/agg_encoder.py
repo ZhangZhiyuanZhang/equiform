@@ -71,10 +71,10 @@ class ResidualMLPBlock(nn.Module):
         return self.relu(x + self.mlp(x))
 
 class AggEncoder(nn.Module):
-    def __init__(self, hidden_dim=64, ksize=10):
+    def __init__(self, in_dim=3, hidden_dim=64, ksize=10):
         super().__init__()
         self.embedding = nn.Sequential(
-            nn.Linear(3, hidden_dim),
+            nn.Linear(in_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.ReLU(),
         )
@@ -100,10 +100,8 @@ class AggEncoder(nn.Module):
             nn.LayerNorm(hidden_dim),
         )
 
-    def forward(self, x):
+    def forward(self, xyz, x):
         B, N = x.shape[:2]
-        xyz = x.clone()
-
         x = self.embedding(x)                     # [B, G, D]
         x = self.local_grouper(xyz, x)            # [B, G, K, 2D]
         x = rearrange(x, 'b g k d -> (b g) k d')  # [BG, K, 2D]

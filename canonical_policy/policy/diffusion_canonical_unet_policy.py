@@ -15,7 +15,8 @@ from canonical_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from canonical_policy.common.pytorch_util import dict_apply
 from canonical_policy.model.vision.canonical_extractor import CanonicalEncoder
 from canonical_policy.policy.base_image_policy import BaseImagePolicy
-    
+from canonical_policy.model.common.rotation_transformer import RotationTransformer
+
 class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
     def __init__(self, 
             shape_meta: dict,
@@ -51,6 +52,7 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         obs_dict = dict_apply(obs_shape_meta, lambda x: x['shape'])
 
         self.use_contra = canonical_encoder_cfg.use_contra
+        self.use_geo = canonical_encoder_cfg.use_geo
 
         obs_encoder = CanonicalEncoder(observation_space=obs_dict,
                                         out_channel=encoder_output_dim,
@@ -67,10 +69,7 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
             global_cond_dim = obs_feature_dim * n_obs_steps
         
         self.use_pc_color = use_pc_color
-        self.pointnet_type = pointnet_type
         
-        cprint(f"[DiffusionUnetCanonicalPolicy] pointnet_type: {self.pointnet_type}", "yellow")
-
         model = CanonicalConditionalUnet1D(
                     input_dim=input_dim,
                     n_obs_steps=n_obs_steps,
@@ -110,7 +109,15 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         self.num_inference_steps = num_inference_steps
 
         # print_params(self)
-        
+        self.quaternion_to_sixd = RotationTransformer('quaternion', 'rotation_6d')
+        self.sixd_to_quaternion = RotationTransformer('rotation_6d', 'quaternion')
+
+    def getQuat(self, vector):
+        return self.sixd_to_quaternion.forward(vector)  # wijk
+
+    def get6DRotation(self, quat):
+        return self.quaternion_to_sixd.forward(quat)  # wijk
+    
     # ========= inference  ============
     def conditional_sample(self, 
             condition_data,
@@ -165,6 +172,7 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
             del obs_dict['robot0_eye_in_hand_image']
         if 'agentview_image' in obs_dict:
             del obs_dict['agentview_image']
+
         # normalize input
         nobs = self.normalizer.normalize(obs_dict)
         nobs['robot0_eef_quat'] = obs_dict['robot0_eef_quat']
@@ -204,10 +212,11 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
             points_center=ret['points_center'],
             est_quat=ret['est_quat'],
             **self.kwargs)
-        
+
         # unnormalize prediction
         naction_pred = nsample[..., :Da]
         action_pred = self.normalizer['action'].unnormalize(naction_pred)
+        action_pred[..., 3:9] = naction_pred[..., 3:9]  # do not unnormalize rot_sixd
 
         # get action
         start = To - 1
@@ -232,7 +241,8 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         # normalize input
         nobs = self.normalizer.normalize(batch['obs'])
         nobs['robot0_eef_quat'] = batch['obs']['robot0_eef_quat']
-        nactions = self.normalizer['action'].normalize(batch['action'])
+        nactions = self.normalizer['action'].normalize(batch['action']) # [B, T, 3+6+1]
+        nactions[..., 3:9] = batch['action'][..., 3:9]  # do not normalize rot_sixd
 
         batch_size = nactions.shape[0]
         horizon = nactions.shape[1]
@@ -307,7 +317,7 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
         loss = loss.mean()
 
         if self.use_contra:
-            loss_ret = loss + 0.05 * ret['contrastive_equiv']
+            loss_ret = loss + 0.1 * ret['contrastive_equiv']
             loss_dict = {
                 'bc_loss': loss.item(),
                 'contrastive_equiv': ret['contrastive_equiv'].item(),
@@ -317,5 +327,5 @@ class DiffusionCanonicalUNetPolicy(BaseImagePolicy):
             loss_dict = {
                 'bc_loss': loss.item(),
             }
-        
-        return loss, loss_dict
+
+        return loss_ret, loss_dict

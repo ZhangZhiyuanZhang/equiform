@@ -212,7 +212,8 @@ class CanonicalConditionalUnet1D(nn.Module):
         sample_quat = self.getQuat(sample_sixd) # [BT, 4] wijk
 
         # SE3 inverse transformation for absolute action
-        sample_pos = quaternion_apply(est_quat_inv, sample_pos - points_center)
+        sample_pos = sample_pos - points_center
+        sample_pos = quaternion_apply(est_quat_inv, sample_pos)
         sample_quat = quaternion_multiply(est_quat_inv, sample_quat)
 
         # Convert back to six-dimensional rotation and concatenate
@@ -277,7 +278,8 @@ class CanonicalConditionalUnet1D(nn.Module):
         x_quat = self.getQuat(x_sixd)  # [BT, 4] wxyz
 
         # SE3 forward transformation for absolute action
-        x_pos = quaternion_apply(est_quat, x_pos) + points_center
+        x_pos = quaternion_apply(est_quat, x_pos)
+        x_pos = x_pos + points_center
         x_quat = quaternion_multiply(est_quat, x_quat)  # q_total = q2 * q1
 
         # Convert back to six-dimensional rotation and concatenate

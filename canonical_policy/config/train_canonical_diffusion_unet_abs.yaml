@@ -9,7 +9,7 @@ shape_meta: ${task.shape_meta}
 exp_name: "debug"
 
 task_name: stack_d1
-n_demo: 100
+n_demo: 200
 horizon: 16
 n_obs_steps: 2
 n_action_steps: 8
@@ -116,7 +116,7 @@ logging:
   project: canonical_${task_name}
   resume: true
   mode: online
-  name: ${policy.pointnet_type}_${n_demo}
+  name: equiform_${n_demo}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: null
   group: null

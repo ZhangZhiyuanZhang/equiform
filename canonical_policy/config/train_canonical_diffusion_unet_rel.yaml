@@ -114,7 +114,7 @@ logging:
   project: canonical_${task_name}_rel
   resume: true
   mode: online
-  name: ${policy.pointnet_type}_${n_demo}
+  name: equiform_${n_demo}
   tags: ["${name}", "${task_name}", "${exp_name}"]
   id: null
   group: null
